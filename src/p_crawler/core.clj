@@ -1,8 +1,9 @@
 (ns p-crawler.core
   "This is the primary ."
   (:gen-class)
-  (:require [clojure.core.async :refer [thread onto-chan chan >!! <!!]]
+  (:require [clojure.core.async :refer [thread go onto-chan chan <!! <!]]
             [monger.core :as mg]
+            [monger.collection :as mc]
             [net.cgrand.enlive-html :as html]
             [clojurewerkz.urly.core :as url]
             [taoensso.timbre :as logger]
@@ -110,7 +111,21 @@
                  links))))
 
 (defn enqueue-urls [urls]
-  (onto-chan url-chan urls false))
+  (send url-queue
+        (fn [{:keys [queue members]} urls]
+          {:queue (into queue (remove members urls))
+           :members (clojure.set/union members (set urls))})
+        urls))
+
+(defn start-queue-transfer [seed]
+  (letfn [(pipe-queue [{:keys [queue members]}]
+            (let [batch (take 10 queue)]
+              (go (<! (onto-chan url-chan batch false))
+                  (send url-queue pipe-queue))
+              {:queue (vec (drop 10 queue))
+               :members (clojure.set/difference members batch)}))]
+    (enqueue-urls seed)
+    (send url-queue pipe-queue)))
 
 (defn process-url [url]
   (set-state :process-url
@@ -121,7 +136,7 @@
 (def threadds (repeatedly 8 #(atom {})))
 
 (defn crawl-web [seed]
-  (onto-chan url-chan seed false)
+  (start-queue-transfer seed)
   (doseq [threadd threadds]
     (thread (binding [threadd threadd]
 	      (loop [url (<!! url-chan)]
