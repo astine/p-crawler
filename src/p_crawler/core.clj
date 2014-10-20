@@ -16,7 +16,12 @@
 
 (logger/refer-timbre)
 
-(def url-chan (chan 100000))
+(def db (mg/get-db "p-crawler" (mg/connect)))
+
+(def url-chan (chan 10))
+
+(def url-queue (agent {:queue []
+                       :members #{}}))
 
 (def domains (atom {}))
 
@@ -34,7 +39,8 @@
 
 (defn update-domain! [domain key value]
   (get-in (swap! domains assoc-in [domain key] value)
-          [domain key]))
+          [domain key])
+  (go (mc/update-by-id "domains"  (array-map :domain domain key value) :upsert true)))
 
 (defn get-domain-value [domain key]
   (get-in @domains [domain key]))
