@@ -12,11 +12,12 @@
             [clj-robots.core :as robots]
             [clj-time.core :as time]
             [clj-time.coerce :as coerce-time])
-  (:import [java.net URL UnknownHostException]))
+  (:import [java.net URL UnknownHostException]
+           [org.bson.types ObjectId]))
 
 (logger/refer-timbre)
 
-(def db (mg/get-db "p-crawler" (mg/connect)))
+(def db (mg/get-db (mg/connect) "p-crawler"))
 
 (def url-chan (chan 10))
 
@@ -40,10 +41,11 @@
 (defn update-domain! [domain key value]
   (get-in (swap! domains assoc-in [domain key] value)
           [domain key])
-  (go (mc/update-by-id "domains"  (array-map :domain domain key value) :upsert true)))
+  (go (mc/update-by-id db "domains" domain (array-map :domain domain key value) :upsert true)))
 
 (defn get-domain-value [domain key]
-  (get-in @domains [domain key]))
+  (or (get-in @domains [domain key])
+      (mc/find-map-by-id db "domains" domain)))
 
 (defn fetch-robots [domain]
   (try
