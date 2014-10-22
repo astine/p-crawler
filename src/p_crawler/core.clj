@@ -4,6 +4,7 @@
   (:require [clojure.core.async :refer [thread go onto-chan chan <!! <!]]
             [monger.core :as mg]
             [monger.collection :as mc]
+            [monger.joda-time :refer :all]
             [net.cgrand.enlive-html :as html]
             [clojurewerkz.urly.core :as url]
             [taoensso.timbre :as logger]
@@ -39,13 +40,16 @@
                           :follow-redirects false})
 
 (defn update-domain! [domain key value]
-  (get-in (swap! domains assoc-in [domain key] value)
-          [domain key])
-  (go (mc/update-by-id db "domains" domain (array-map :domain domain key value) :upsert true)))
+  (let [return (get-in (swap! domains assoc-in [domain key] value)
+                       [domain key])]
+    (go (mc/update-by-id db "domains" domain
+                         (array-map :$set (array-map :domain domain key value))
+                         {:upsert true}))
+    return))
 
 (defn get-domain-value [domain key]
   (or (get-in @domains [domain key])
-      (mc/find-map-by-id db "domains" domain)))
+      (key (mc/find-map-by-id db "domains" domain))))
 
 (defn fetch-robots [domain]
   (try
@@ -134,6 +138,11 @@
                :members (clojure.set/difference members batch)}))]
     (enqueue-urls seed)
     (send url-queue pipe-queue)))
+
+(defn save-queue []
+  (mc/remove db "url_queue")
+  (mc/insert-batch db "url_queue" (map (partial array-map :_id) @url-queue)))
+  
 
 (defn process-url [url]
   (set-state :process-url
