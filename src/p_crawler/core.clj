@@ -1,7 +1,8 @@
 (ns p-crawler.core
   "This is the primary ."
   (:gen-class)
-  (:require [clojure.core.async :refer [thread go onto-chan chan <!! <!]]
+  (:require [clojure.core.async :refer [thread go onto-chan chan <!! <! close!]
+             :as async]
             [monger.core :as mg]
             [monger.collection :as mc]
             [monger.joda-time :refer :all]
@@ -140,9 +141,14 @@
     (send url-queue pipe-queue)))
 
 (defn save-queue []
-  (mc/remove db "url_queue")
-  (mc/insert-batch db "url_queue" (map (partial array-map :_id) @url-queue)))
-  
+  (mc/insert-batch db "url_queue" (map (partial array-map :_id) @url-queue))
+  (close! url-chan)
+  (mc/insert-batch db "url_queue" (<!! (async/reduce conj [] url-chan))))
+
+(defn retrieve-queue []
+  (let [queue (mc/find-maps db "url_queue")]
+    (mc/remove db "url_queue")
+    queue))
 
 (defn process-url [url]
   (set-state :process-url
@@ -167,4 +173,4 @@
 (defn -main
   "I don't do a whole lot ... yet."
   [& args]
-  (println "Hello, World!"))
+  (crawl-web (retrieve-queue)))
