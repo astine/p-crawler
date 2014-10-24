@@ -14,6 +14,8 @@
                  [com.novemberain/pantomime "2.3.0"]
                  [com.novemberain/monger "2.0.0"]
                  [enlive "1.1.5"]
+                 [xerces/xercesImpl "2.11.0"]
+                 [net.sourceforge.nekohtml/nekohtml "1.9.21"]
                  [de.l3s.boilerpipe/boilerpipe "1.1.0"]]
   :resource-paths ["resources/codox-info-0.1.1-SNAPSHOT.jar"]
   :plugins [[codox "0.8.10"]
