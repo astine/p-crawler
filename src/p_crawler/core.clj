@@ -132,7 +132,7 @@
 (defn links [domain]
   (set-state :links
              (update-with-crawl-delay [domain :links]
-               (get-remote-domains domain (extract-links (body domains))))))
+               (get-remote-domains domain (extract-links (body domain))))))
 
 (defn tokens [domain]
   (set-state :tokens
