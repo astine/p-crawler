@@ -24,9 +24,9 @@
       remove-stop-words
       set))
 
-(def filter (atom {:count 0
-                   :probabilities {}
-                   :anti-probabilities {}}))
+(def classifier (atom {:count 0
+                       :probabilities {}
+                       :anti-probabilities {}}))
 
 (defn increment-token-probability [prior prior-count]
   (/ (+ (* prior prior-count) 1)

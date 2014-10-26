@@ -13,7 +13,8 @@
             [clj-http.client :as http]
             [clj-robots.core :as robots]
             [clj-time.core :as time]
-            [clj-time.coerce :as coerce-time])
+            [clj-time.coerce :as coerce-time]
+            [p-crawler.classifier :refer :all])
   (:import [java.net URL UnknownHostException]
            [org.bson.types ObjectId]))
 
@@ -88,21 +89,23 @@
                  (when (#{"ac" "ad" "ae" "aero" "af" "ag" "ai" "al" "am" "an" "ao" "aq" "ar" "arpa" "as" "asia" "at" "au" "aw" "ax" "az" "ba" "bb" "bd" "be" "bf" "bg" "bh" "bi" "biz" "bj" "bm" "bn" "bo" "br" "bs" "bt" "bv" "bw" "by" "bz" "ca" "cat" "cc" "cd" "cf" "cg" "ch" "ci" "ck" "cl" "cm" "cn" "co" "com" "coop" "cr" "cu" "cv" "cw" "cx" "cy" "cz" "de" "dj" "dk" "dm" "do" "dz" "ec" "edu" "ee" "eg" "er" "es" "et" "eu" "fi" "fj" "fk" "fm" "fo" "fr" "ga" "gb" "gd" "ge" "gf" "gg" "gh" "gi" "gl" "gm" "gn" "gov" "gp" "gq" "gr" "gs" "gt" "gu" "gw" "gy" "hk" "hm" "hn" "hr" "ht" "hu" "id" "ie" "il" "im" "in" "info" "int" "io" "iq" "ir" "is" "it" "je" "jm" "jo" "jobs" "jp" "ke" "kg" "kh" "ki" "km" "kn" "kp" "kr" "kw" "ky" "kz" "la" "lb" "lc" "li" "lk" "lr" "ls" "lt" "lu" "lv" "ly" "ma" "mc" "md" "me" "mg" "mh" "mil" "mk" "ml" "mm" "mn" "mo" "mobi" "mp" "mq" "mr" "ms" "mt" "mu" "museum" "mv" "mw" "mx" "my" "mz" "na" "name" "nc" "ne" "net" "nf" "ng" "ni" "nl" "no" "np" "nr" "nu" "nz" "om" "org" "pa" "pe" "pf" "pg" "ph" "pk" "pl" "pm" "pn" "post" "pr" "pro" "ps" "pt" "pw" "py" "qa" "re" "ro" "rs" "ru" "rw" "sa" "sb" "sc" "sd" "se" "sg" "sh" "si" "sj" "sk" "sl" "sm" "sn" "so" "sr" "st" "su" "sv" "sx" "sy" "sz" "tc" "td" "tel" "tf" "tg" "th" "tj" "tk" "tl" "tm" "tn" "to" "tp" "tr" "travel" "tt" "tv" "tw" "tz" "ua" "ug" "uk" "us" "uy" "uz" "va" "vc" "ve" "vg" "vi" "vn" "vu" "wf" "ws" "xn" "xyz" "xxx" "ye" "yt" "za" "zm" "zw"} tld)
                    domain)))))
 
-(defn fetch-links [domain]
-  (set-state :fetch-links
+(defn fetch-index [domain]
+  (set-state :fetch-index
              (info (str "fetching: " domain))
              (try
                (let [{:keys [body] :as response}
                      (http/get (str "http://" domain)
                                connection-defaults)]
-                 (swap! threadd assoc :state :parse)
-                 (map (comp :href :attrs)
-                      (html/select
-                       (html/html-resource (java.io.StringReader. body))
-                       [:a])))
+                 body)
                (catch Exception e
                  (error e)
                  nil))))
+
+(defn extract-links [body]
+  (map (comp :href :attrs)
+       (html/select
+        (html/html-resource (java.io.StringReader. body))
+        [:a])))
 
 (defn get-remote-domains [domain links]
   (set-state :get-remote-domains
@@ -110,18 +113,31 @@
               (remove #(or (nil? %) (= % domain))
                       (map extract-domain-from-url links)))))
 
+(defmacro update-with-crawl-delay [[domain field] & body]
+  `(let [crawl-delay# (or (:crawls-delay (robots ~domain)) default-crawl-delay)
+         value# (get-domain-value ~domain ~field)]
+     (if (or (not value#)
+             (time/before? (get-domain-value ~domain :last-parse-time)
+                           (time/minus (time/now) crawl-delay#)))
+       (update-domain! ~domain ~field ~@body)
+       value#)))
+
+(defn body [domain]
+  (set-state :body
+             (update-with-crawl-delay [domain :body]
+               (do
+                 (update-domain! domain :last-parse-time (time/now))
+                 (fetch-index domain)) )))
+
 (defn links [domain]
   (set-state :links
-             (let [crawl-delay (or (:crawls-delay (robots domain)) default-crawl-delay)
-                   links (get-domain-value domain :links)]
-               (if (or (not links)
-                       (time/before? (get-domain-value domain :last-parse-time)
-                                     (time/minus (time/now) crawl-delay)))
-                 (update-domain! domain :links
-                                 (do
-                                   (update-domain! domain :last-parse-time (time/now))
-                                   (get-remote-domains domain (fetch-links domain))))
-                 links))))
+             (update-with-crawl-delay [domain :links]
+               (get-remote-domains domain (extract-links (body domains))))))
+
+(defn tokens [domain]
+  (set-state :tokens
+             (update-with-crawl-delay [domain :tokens]
+               (webpage-to-token-bag (body domain)))))
 
 (defn enqueue-urls [urls]
   (send url-queue
@@ -153,6 +169,7 @@
 (defn process-url [url]
   (set-state :process-url
              (let [links (links url)]
+               (tokens url)
                (when links
                  (enqueue-urls links)))))
 
