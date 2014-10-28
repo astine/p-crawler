@@ -74,11 +74,13 @@
 (def ^:dynamic threadd nil)
 
 (defmacro set-state [state & body]
-  `(let [old-state# (:state @threadd)]
-     (swap! threadd assoc :state ~state)
-     (let [output# (do ~@body)]
-       (swap! threadd assoc :state old-state#)
-       output#)))
+  `(if threadd
+     (let [old-state# (:state @threadd)]
+       (swap! threadd assoc :state ~state)
+       (let [output# (do ~@body)]
+         (swap! threadd assoc :state old-state#)
+         output#))
+     (do ~@body)))
 
 (defn extract-domain-from-url [url]
   (set-state [:extract-domain-from-url url]
