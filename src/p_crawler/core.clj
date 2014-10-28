@@ -138,12 +138,12 @@
 (defn links [domain]
   (set-state :links
              (update-with-crawl-delay [domain :links]
-               (get-remote-domains domain (extract-links (body domain))))))
+               (get-remote-domains domain (extract-links (or (body domain) ""))))))
 
 (defn tokens [domain]
   (set-state :tokens
              (update-with-crawl-delay [domain :tokens]
-               (webpage-to-token-bag (body domain)))))
+               (webpage-to-token-bag (or (body domain) "")))))
 
 (defn enqueue-urls [urls]
   (send url-queue
