@@ -158,6 +158,12 @@
     (enqueue-urls seed)
     (send url-queue pipe-queue)))
 
+(defn clear-queue []
+  (send url-queue (constantly {:queue []
+                               :members #{}}))
+  (close! url-chan)
+  (<!! (async/reduce conj [] url-chan)))
+
 (defn save-queue []
   (mc/insert-batch db "url_queue" (map (partial array-map :_id) @url-queue))
   (close! url-chan)
