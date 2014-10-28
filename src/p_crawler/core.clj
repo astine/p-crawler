@@ -15,7 +15,7 @@
             [clj-time.core :as time]
             [clj-time.coerce :as coerce-time]
             [p-crawler.classifier :refer :all])
-  (:import [java.net URL UnknownHostException]
+  (:import [java.net URL UnknownHostException ConnectException]
            [org.bson.types ObjectId]))
 
 (logger/refer-timbre)
@@ -99,6 +99,10 @@
                      (http/get (str "http://" domain)
                                connection-defaults)]
                  body)
+               (catch UnknownHostException e
+                 (update-domain! domain :unable-to-download true))
+               (catch ConnectException e
+                 (update-domain! domain :unable-to-download true))
                (catch Exception e
                  (error e)
                  nil))))
