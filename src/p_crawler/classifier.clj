@@ -58,3 +58,8 @@
      :probabilities (persistent! (if match? inc-probs dec-probs))
      :anti-probabilities (persistent! (if match? dec-probs inc-probs))}))
     
+(defn train-classifier [classifier matches antimatches]
+  (let [reduce-update (partial reduce update-tokens)]
+    (-> classifier
+        (reduce-update matches (repeat true))
+        (reduce-update matches (repeat false)))))
