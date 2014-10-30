@@ -14,13 +14,12 @@
             [clj-robots.core :as robots]
             [clj-time.core :as time]
             [clj-time.coerce :as coerce-time]
+            [p-crawler.database :refer :all]
             [p-crawler.classifier :refer :all])
   (:import [java.net URL UnknownHostException ConnectException]
            [org.bson.types ObjectId]))
 
 (logger/refer-timbre)
-
-(def db (mg/get-db (mg/connect) "p-crawler"))
 
 (def url-chan (chan 10))
 

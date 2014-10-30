@@ -1,6 +1,10 @@
 (ns p-crawler.classifier
-  (:require [clojure.string :refer [lower-case]]
-            [clojure.set :refer [difference intersection union]])
+  (:require [monger.core :as mg]
+            [monger.collection :as mc]
+            [monger.joda-time :refer :all]
+            [clojure.string :refer [lower-case]]
+            [clojure.set :refer [difference intersection union]]
+            [p-crawler.database :refer :all])
   (:import [java.net URL]
            [de.l3s.boilerpipe.extractors ArticleExtractor DefaultExtractor]
            [de.l3s.boilerpipe.sax BoilerpipeHTMLParser]
@@ -24,10 +28,29 @@
       remove-stop-words
       set))
 
-(def classifier (atom {:count 0
-                       :probabilities {}
-                       :anti-probabilities {}}))
+(def classifiers (atom {:category "default"
+                        :count 0
+                        :probabilities {}
+                        :anti-probabilities {}}))
 
+(defn save-classifier [{:keys [category] :as classifier}]
+  (mc/update-by-id db "classifiers" category classifier) {:upsert true})
+
+(defn generate-classifier [category]
+  {:category category
+   :count 0
+   :probabilities {}
+   :anti-probabilities {}} )
+
+(defn classifier [category]
+  (or (mc/find-map-by-id db "classifiers" category)
+      (generate-classifier category)))
+
+(defn update-classifier [category fn]
+  (-> (classifier category)
+      fn
+      save-classifier))
+  
 (defn increment-token-probability [prior prior-count]
   (/ (+ (* prior prior-count) 1)
      (inc prior-count)))
@@ -36,7 +59,7 @@
   (/ (+ (* prior prior-count) 0)
      (inc prior-count)))
 
-(defn update-tokens [{:keys [probabilities anti-probabilities count]} tokens match?]
+(defn process-document-tokens [{:keys [probabilities anti-probabilities count]} tokens match?]
   (let [old-tokens (set (keys probabilities))
         new-tokens (difference tokens old-tokens)
         incrementing-tokens (intersection tokens old-tokens)
@@ -59,7 +82,7 @@
      :anti-probabilities (persistent! (if match? dec-probs inc-probs))}))
     
 (defn train-classifier [classifier matches antimatches]
-  (let [reduce-update (partial reduce update-tokens)]
+  (let [reduce-update (partial reduce process-document-tokens)]
     (-> classifier
         (reduce-update matches (repeat true))
         (reduce-update matches (repeat false)))))
