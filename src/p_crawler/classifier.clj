@@ -4,6 +4,7 @@
             [monger.joda-time :refer :all]
             [clojure.string :refer [lower-case]]
             [clojure.set :refer [difference intersection union]]
+            [clojure.core.async :refer [go]]
             [p-crawler.database :refer :all])
   (:import [java.net URL]
            [de.l3s.boilerpipe.extractors ArticleExtractor DefaultExtractor]
@@ -28,13 +29,11 @@
       remove-stop-words
       set))
 
-(def classifiers (atom {:category "default"
-                        :count 0
-                        :probabilities {}
-                        :anti-probabilities {}}))
+(def classifiers (atom {}))
 
-(defn save-classifier [{:keys [category] :as classifier}]
-  (mc/update-by-id db "classifiers" category classifier) {:upsert true})
+(defn save-classifier! [{:keys [category] :as classifier}]
+  (swap! classifiers assoc category classifier)
+  (go (mc/update-by-id db "classifiers" category classifier) {:upsert true}))
 
 (defn generate-classifier [category]
   {:category category
@@ -43,10 +42,11 @@
    :anti-probabilities {}} )
 
 (defn classifier [category]
-  (or (mc/find-map-by-id db "classifiers" category)
+  (or (get @classifiers category)
+      (mc/find-map-by-id db "classifiers" category)
       (generate-classifier category)))
 
-(defn update-classifier [category fn]
+(defn update-classifier! [category fn]
   (-> (classifier category)
       fn
       save-classifier))
