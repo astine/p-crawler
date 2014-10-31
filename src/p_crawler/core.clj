@@ -180,7 +180,7 @@
 (defn process-url [url]
   (set-state :process-url
              (let [links (links url)]
-               (tokens url)
+               (update-classifier! "pornography" process-document-tokens (tokens url))
                (when links
                  (enqueue-urls links)))))
 
