@@ -1,7 +1,13 @@
 (ns p-crawler.transducers)
 
+(defn- reduced?
+  "Returns true if x is the result of a call to reduced"
+  {:inline (fn [x] `(clojure.lang.RT/isReduced ~x ))
+   :inline-arities #{1}
+   :added "1.5"}
+  ([x] (clojure.lang.RT/isReduced x)))
 
-(defn unreduced
+(defn- unreduced
   "If x is reduced?, returns (deref x), else returns x"
   {:added "1.7"}
   [x]
