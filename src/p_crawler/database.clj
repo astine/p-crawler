@@ -2,6 +2,8 @@
   (:require [monger.core :as mg]
             [monger.collection :as mc]
             [monger.operators :refer :all]
+            [monger.joda-time :refer :all]
+            [clj-time.core :as time]
             [clojure.string :refer [join]]
             [clojure.core.async :refer [go thread chan put! <!! <!] :as async]
             [p-crawler.transducers :refer :all]))
@@ -9,6 +11,8 @@
 (def db (mg/get-db (mg/connect) "p-crawler"))
 
 (def cache "In-memory database cache" (atom {}))
+
+(def cache-last-update-key (keyword (gensym "last-cache-update-")))
 
 ;; Cache management functions
 
@@ -20,26 +24,27 @@
 
 (defn get-collection-from-cache [collection]
   (or (get @cache collection)
-      (add-collection-to-cache! collection)))
+      (get (add-collection-to-cache! collection) collection)))
 
 (defn add-document-to-cache! [collection doc-name document]
   (swap! (get-collection-from-cache collection)
-         assoc doc-name document))
+         assoc doc-name (assoc document cache-last-update-key (time/now))))
 
 (defn remove-document-from-cache! [collection doc-name]
   (swap! (get-collection-from-cache collection)
          dissoc doc-name))
 
 (defn get-document-from-cache [collection doc-name]
-  (get (get-collection-from-cache collection) doc-name))
+  (get @(get-collection-from-cache collection) doc-name))
 
 (defn query-document-in-cache [collection selkeys]
-  (get-in (get-collection-from-cache collection)
+  (get-in @(get-collection-from-cache collection)
           selkeys))
 
-(defn update-document-in-cache! [collection selkeys value]
+(defn update-document-in-cache! [collection [doc-name & selkeys] value]
   (swap! (get-collection-from-cache collection)
-         assoc-in selkeys value))
+         #(assoc % doc-name (assoc (assoc-in (get % doc-name) selkeys value)
+                              cache-last-update-key (time/now)))))
 
 ;; Database interaction functions
 
@@ -52,23 +57,25 @@
 (def update-chan (chan 10000 (comp (partitioning-all 20)
                                    (mapcatting set))))
 
+(defn update-db! [collection [doc-name & selkeys] value]
+  (mc/update-by-id db collection doc-name
+                   (array-map $set (array-map (dotted-key selkeys) value))
+                   {:upsert true}))
+  
 (defn run-updates! [[ioc?]]
-    (if ioc?
-      (go
-       (loop [[collection [doc-name & selkeys] value :as update]
-              (<! update-chan)]
-         (when update
-           (mc/update-by-id db collection doc-name
-                            (array-map $set (array-map (dotted-key selkeys) value))
-                            {:upsert true})
-           (recur (<! update-chan)))))
-     (thread (loop [[collection [doc-name & selkeys] value :as update]
-                    (<!! update-chan)]
-               (when update
-                 (mc/update-by-id db collection doc-name
-                                  (array-map $set (array-map (dotted-key selkeys) value))
-                                  {:upsert true})
-                 (recur (<!! update-chan)))))))
+  (if ioc?
+    (go
+     (loop [[collection selkeys value :as update]
+            (<! update-chan)]
+       (when update
+         (update-db! collection selkeys value)
+         (recur (<! update-chan)))))
+    (thread
+     (loop [[collection selkeys value :as update]
+            (<!! update-chan)]
+       (when update
+         (update-db! collection selkeys value)
+         (recur (<!! update-chan)))))))
 
 (defn update-document! [collection selkeys value]
   (put! update-chan [collection selkeys value])
@@ -76,9 +83,20 @@
 
 (defn get-document [collection doc-name]
   (or (get-document-from-cache collection doc-name)
-      (mc/find-map-by-id db collection doc-name)))
+      (get (swap! (get-collection-from-cache collection)
+                  assoc doc-name (assoc (mc/find-map-by-id db collection doc-name)
+                                   cache-last-update-key (time/now)))
+           doc-name)))
 
 (defn query-document [collection [doc-name & selkeys]]
   (or (query-document-in-cache collection (cons doc-name selkeys))
-      (get-in (mc/find-map-by-id db collection doc-name [(dotted-key selkeys)])
+      (get-in (swap! (get-collection-from-cache collection)
+                     assoc doc-name (assoc (mc/find-map-by-id db collection doc-name)
+                                      cache-last-update-key (time/now)))
               selkeys)))
+
+;; Cache garbage collector
+
+;(def max-cache-entries 10000)
+
+;(defn trim-excess-cache-entries 
