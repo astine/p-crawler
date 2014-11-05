@@ -97,6 +97,25 @@
 
 ;; Cache garbage collector
 
-;(def max-cache-entries 10000)
+(def max-cache-entries 10000)
 
-;(defn trim-excess-cache-entries 
+(defn get-items-to-keep []
+  (->> @cache
+       (mapcat #(map (fn [doc] (cons (first %) doc)) @(second %)))
+       (sort-by (comp cache-last-update-key last))
+       (reverse)
+       (nthrest max-cache-entries)
+       (map butlast)
+       (group-by first)))
+
+(defn trim-excess-cache-entries! []
+  (let [items (get-items-to-keep)]
+    (doseq [[collection documents] items]
+      (swap! (get-collection collection)
+             #(apply dissoc (cons % (map second documents))))))) 
+
+(defn start-gc-process []
+  (go (loop []
+        (trim-excess-cache-entries)
+        (<!! (async/timeout 100))
+        (recur))))
