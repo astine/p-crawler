@@ -14,7 +14,14 @@
 
 (def ^:private cache-last-update-key (keyword (gensym "last-cache-update-")))
 
+(def ^:private max-cache-entries 10000)
+
+(def ^:private gc-chan (chan (async/sliding-buffer 1)))
+
 ;; Cache management functions
+
+(defn- get-current-cache-size []
+  (count (mapcat (comp vals deref) (vals @cache))))
 
 (defn- add-collection-to-cache! [collection]
   (swap! cache assoc collection (atom {})))
@@ -27,6 +34,8 @@
       (get (add-collection-to-cache! collection) collection)))
 
 (defn- add-document-to-cache! [collection doc-name document]
+  (when (>= (get-current-cache-size) max-cache-entries)
+    (put! gc-chan true))
   (swap! (get-collection-from-cache collection)
          assoc doc-name (assoc document cache-last-update-key (time/now))))
 
@@ -104,14 +113,12 @@
 
 ;; Cache garbage collector
 
-(def ^:private max-cache-entries 10000)
-
 (defn- get-items-to-remove []
   (->> @cache
        (mapcat #(map (fn [doc] (cons (first %) doc)) @(second %)))
        (sort-by (comp cache-last-update-key last))
        (reverse)
-       (#(nthrest % max-cache-entries))
+       (#(nthrest % (- max-cache-entries (/ max-cache-entries 10))))
        (map butlast)
        (group-by first)))
 
@@ -122,7 +129,7 @@
              #(apply dissoc (cons % (map second documents))))))) 
 
 (defn run-cache-gc! []
-  (go (loop []
+  (go (loop [wait-gc (<! gc-chan)]
         (trim-excess-cache-entries!)
-        (<!! (async/timeout 100))
-        (recur))))
+        (async/alts!! [gc-chan (async/timeout 100)])
+        (recur (<! gc-chan)))))
