@@ -26,8 +26,6 @@
 (def url-queue (agent {:queue []
                        :members #{}}))
 
-(def domains (atom {}))
-
 (def robots-expire-duration (time/days 1))
 
 (def default-crawl-delay (time/seconds 30))
@@ -41,16 +39,10 @@
                           :follow-redirects false})
 
 (defn update-domain! [domain key value]
-  (let [return (get-in (swap! domains assoc-in [domain key] value)
-                       [domain key])]
-    (go (mc/update-by-id db "domains" domain
-                         (array-map :$set (array-map :domain domain key value))
-                         {:upsert true}))
-    return))
+  (update-document! "domains" [domain key] value))
 
 (defn get-domain-value [domain key]
-  (or (get-in @domains [domain key])
-      (key (mc/find-map-by-id db "domains" domain))))
+  (query-document "domains" [domain key]))
 
 (defn fetch-robots [domain]
   (try

@@ -32,8 +32,7 @@
 (def classifiers (atom {}))
 
 (defn save-classifier! [{:keys [category] :as classifier}]
-  (swap! classifiers assoc category classifier)
-  (go (mc/update-by-id db "classifiers" category classifier) {:upsert true}))
+  (update-document! "classifiers" [category] classifier))
 
 (defn generate-classifier [category]
   {:category category
@@ -42,14 +41,14 @@
    :anti-probabilities {}} )
 
 (defn classifier [category]
-  (or (get @classifiers category)
-      (mc/find-map-by-id db "classifiers" category)
-      (generate-classifier category)))
+  (or (get-document "classifiers" category)
+      (update-document! "classifiers" [category]
+                        (generate-classifier category))))
 
 (defn update-classifier! [category fn]
   (-> (classifier category)
       fn
-      save-classifier))
+      save-classifier!))
   
 (defn increment-token-probability [prior prior-count]
   (/ (+ (* prior prior-count) 1)
