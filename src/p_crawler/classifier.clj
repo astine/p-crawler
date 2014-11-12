@@ -1,6 +1,6 @@
 (ns p-crawler.classifier
   (:require [monger.core :as mg]
-            [monger.collection :as mc]
+            [monger.query :as mq]
             [monger.joda-time :refer :all]
             [clojure.string :refer [lower-case]]
             [clojure.set :refer [difference intersection union]]
@@ -85,3 +85,17 @@
     (-> classifier
         (reduce-update matches (repeat true))
         (reduce-update matches (repeat false)))))
+
+(defn- dotted-key
+  ([keys]
+     (clojure.string/join "." (map name keys)))
+  ([k & keys]
+     (dotted-key (cons k keys))))
+
+(defn fetch-classified-domains [category matched? count]
+  (mq/with-collection db "domains"
+    (mq/find {(dotted-key :manual_class category) (if matched? 1 0)})
+    (mq/fields [:domain :tokens])
+    (mq/sort (array-map (dotted-key :manual_class category) (if matched? -1 1)))
+    (mq/limit count)))
+  

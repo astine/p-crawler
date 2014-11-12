@@ -8,7 +8,7 @@
             [clojure.core.async :refer [go thread chan put! <!! <!] :as async]
             [p-crawler.transducers :refer :all]))
 
-(def ^:private db (mg/get-db (mg/connect) "p-crawler"))
+(def db (mg/get-db (mg/connect) "p-crawler"))
 
 (def ^:private cache "In-memory database cache" (atom {}))
 
