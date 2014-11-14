@@ -38,8 +38,8 @@
                           :throw-exceptions false
                           :follow-redirects false})
 
-(defn update-domain! [domain key value]
-  (update-document! "domains" [domain key] value))
+(defn update-domain! [domain key value & [synchronously]]
+  (update-document! "domains" [domain key] value synchronously))
 
 (defn get-domain-value [domain key]
   (query-document "domains" [domain key]))

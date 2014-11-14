@@ -66,8 +66,8 @@
   ([k & keys]
      (dotted-key (cons k keys))))
 
-(def  ^:private update-chan (chan 10000 (comp (partitioning-all 20)
-                                   (mapcatting set))))
+(def ^:private update-chan (chan 10000 (comp (partitioning-all 20)
+                                             (mapcatting set))))
 
 (defn- update-db! [collection [doc-name & selkeys] value]
   (mc/update-by-id db collection doc-name
@@ -82,6 +82,7 @@
      (loop [[collection selkeys value :as update]
             (<! update-chan)]
        (when update
+         (println "update!")
          (update-db! collection selkeys value)
          (recur (<! update-chan)))))
     (thread
@@ -91,8 +92,10 @@
          (update-db! collection selkeys value)
          (recur (<!! update-chan)))))))
 
-(defn update-document! [collection selkeys value]
-  (put! update-chan [collection selkeys value])
+(defn update-document! [collection selkeys value & [synchronously]]
+  (if synchronously
+    (update-db! collection selkeys value)
+    (put! update-chan [collection selkeys value]))
   (update-document-in-cache! collection selkeys value))
 
 (defn get-document [collection doc-name]
@@ -109,7 +112,7 @@
                      assoc doc-name (dissoc (assoc (mc/find-map-by-id db collection doc-name)
                                               cache-last-update-key (time/now))
                                             :_id))
-              selkeys)))
+              (cons doc-name selkeys))))
 
 ;; Cache garbage collector
 
