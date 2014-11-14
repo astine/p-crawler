@@ -91,9 +91,11 @@
                                connection-defaults)]
                  body)
                (catch UnknownHostException e
-                 (update-domain! domain :unable-to-download true))
+                 (update-domain! domain :unable-to-download true)
+                 nil)
                (catch ConnectException e
-                 (update-domain! domain :unable-to-download true))
+                 (update-domain! domain :unable-to-download true)
+                 nil)
                (catch Exception e
                  (error e)
                  nil))))
