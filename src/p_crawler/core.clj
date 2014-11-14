@@ -6,7 +6,6 @@
             [monger.core :as mg]
             [monger.collection :as mc]
             [monger.joda-time :refer :all]
-            [net.cgrand.enlive-html :as html]
             [clojurewerkz.urly.core :as url]
             [taoensso.timbre :as logger]
             [clojure.string :refer [split]]
@@ -15,7 +14,7 @@
             [clj-time.core :as time]
             [clj-time.coerce :as coerce-time]
             [p-crawler.database :refer :all]
-            [p-crawler.classifier :refer :all])
+            [p-crawler.page-parser :refer :all])
   (:import [java.net URL UnknownHostException ConnectException]
            [org.bson.types ObjectId]))
 
@@ -100,12 +99,6 @@
                  (error e)
                  nil))))
 
-(defn extract-links [body]
-  (map (comp :href :attrs)
-       (html/select
-        (html/html-resource (java.io.StringReader. body))
-        [:a])))
-
 (defn get-remote-domains [domain links]
   (set-state :get-remote-domains
              (set
@@ -174,7 +167,7 @@
 (defn process-url [url]
   (set-state :process-url
              (let [links (links url)]
-               (update-classifier! "pornography" process-document-tokens (tokens url))
+               (tokens url)
                (when links
                  (enqueue-urls links)))))
 
