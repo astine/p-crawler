@@ -5,7 +5,8 @@
             [clojure.string :refer [lower-case]]
             [clojure.set :refer [difference intersection union]]
             [clojure.core.async :refer [go]]
-            [p-crawler.database :refer :all])
+            [p-crawler.database :refer :all]
+            [p-crawler.crawler :refer :all])
   (:import [java.net URL]))
 
 (def classifiers (atom {}))
