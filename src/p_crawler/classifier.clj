@@ -16,9 +16,10 @@
 
 (defn generate-classifier [category]
   {:category category
-   :count 0
    :probabilities {}
-   :anti-probabilities {}} )
+   :count 0
+   :anti-probabilities {}
+   :anti-count 0} )
 
 (defn classifier [category]
   (or (get-document "classifiers" category)
@@ -38,33 +39,31 @@
   (/ (+ (* prior prior-count) 0)
      (inc prior-count)))
 
-(defn process-document-tokens [{:keys [probabilities anti-probabilities count]} tokens match?]
-  (let [old-tokens (set (keys probabilities))
+(defn process-document-tokens [{:keys [probabilities anti-probabilities count anti-count]} tokens match?]
+  (let [ncount (if match? (or count 0) (or anti-count 0))
+        old-tokens (set (keys probabilities))
         new-tokens (difference tokens old-tokens)
         incrementing-tokens (intersection tokens old-tokens)
         decrementing-tokens (difference old-tokens tokens)
-        inc-probs (transient (if match? probabilities anti-probabilities))
-        dec-probs (transient (if match? anti-probabilities probabilities))]
-    (doseq [token new-tokens]
-      (assoc! inc-probs token (/ 1 (inc count)))
-      (assoc! dec-probs token 0))
-    (doseq [token incrementing-tokens]
-      (assoc! inc-probs
-              token
-              (increment-token-probability (get inc-probs token) count)))
-    (doseq [token decrementing-tokens]
-      (assoc! dec-probs
-              token
-              (decrement-token-probability (get dec-probs token) count)))
-    {:count (int count)
+        inc-probs (as-> (transient (or (if match? probabilities anti-probabilities) {})) inc-probs
+                        (reduce #(assoc! %1 %2 (/ 1 (inc ncount)))
+                                inc-probs new-tokens)
+                        (reduce #(assoc! %1 %2 (increment-token-probability (get %1 %2) ncount))
+                                inc-probs incrementing-tokens)
+                        (reduce #(assoc! %1 %2 (decrement-token-probability (get %1 %2) ncount))
+                                inc-probs decrementing-tokens))
+        dec-probs (reduce #(assoc! %1 %2 0)
+                          (transient (or (if match? anti-probabilities probabilities) {}))
+                          new-tokens)]
+    {:count (if match? (inc ncount) count)
+     :anti-count (if match? anti-count (inc ncount))
      :probabilities (persistent! (if match? inc-probs dec-probs))
      :anti-probabilities (persistent! (if match? dec-probs inc-probs))}))
     
 (defn train-classifier [classifier matches antimatches]
-  (let [reduce-update (partial reduce process-document-tokens)]
-    (-> classifier
-        (reduce-update matches (repeat true))
-        (reduce-update antimatches (repeat false)))))
+  (-> classifier
+      ((partial reduce #(process-document-tokens %1 %2 true)) matches)
+      ((partial reduce #(process-document-tokens %1 %2 false)) antimatches)))
 
 (defn- dotted-key
   ([keys]
@@ -73,9 +72,13 @@
      (dotted-key (cons k keys))))
 
 (defn fetch-classified-domains [category matched? count]
-  (mq/with-collection db "domains"
-    (mq/find {(dotted-key :manual_class category) (if matched? 1 0)})
-    (mq/fields [:domain :tokens])
-    (mq/sort (array-map (dotted-key :manual_class category) (if matched? -1 1)))
-    (mq/limit count)))
+  (map :domain
+       (mq/with-collection db "domains"
+         (mq/find {(dotted-key :manual_class category) (if matched? 1 0)
+                   :unable-to-download {:$ne true}})
+         (mq/fields [:domain :tokens])
+         (mq/sort (array-map (dotted-key :manual_class category) (if matched? -1 1)))
+         (mq/limit count))))
   
+(defn classified-domain-tokens [category matched? count]
+  (map tokens (fetch-classified-domains category matched? count)))
