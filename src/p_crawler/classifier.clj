@@ -9,6 +9,24 @@
             [p-crawler.crawler :refer :all])
   (:import [java.net URL]))
 
+(defn- dotted-key
+  ([keys]
+     (clojure.string/join "." (map name keys)))
+  ([k & keys]
+     (dotted-key (cons k keys))))
+
+(defn fetch-classified-domains [category matched? count]
+  (map :domain
+       (mq/with-collection db "domains"
+         (mq/find {(dotted-key :manual_class category) (if matched? 1 0)
+                   :unable-to-download {:$ne true}})
+         (mq/fields [:domain :tokens])
+         (mq/sort (array-map (dotted-key :manual_class category) (if matched? -1 1)))
+         (mq/limit count))))
+  
+(defn classified-domain-tokens [category matched? count]
+  (map tokens (fetch-classified-domains category matched? count)))
+
 (def classifiers (atom {}))
 
 (defn save-classifier! [{:keys [category] :as classifier}]
@@ -61,25 +79,27 @@
      :probabilities (persistent! (if match? inc-probs dec-probs))
      :anti-probabilities (persistent! (if match? dec-probs inc-probs)))))
     
-(defn train-classifier [classifier matches antimatches]
+(defn train-classifier [classifier matches anti-matches]
   (-> classifier
       ((partial reduce #(process-document-tokens %1 %2 true)) matches)
-      ((partial reduce #(process-document-tokens %1 %2 false)) antimatches)))
+      ((partial reduce #(process-document-tokens %1 %2 false)) anti-matches)))
 
-(defn- dotted-key
-  ([keys]
-     (clojure.string/join "." (map name keys)))
-  ([k & keys]
-     (dotted-key (cons k keys))))
+(defn train-classifier! [category & [count]]
+  (let [matches (classified-domain-tokens category true count)
+        anti-matches (classified-domain-tokens category false count)]
+    (update-classifier! category #(train-classifier % matches anti-matches))))
 
-(defn fetch-classified-domains [category matched? count]
-  (map :domain
-       (mq/with-collection db "domains"
-         (mq/find {(dotted-key :manual_class category) (if matched? 1 0)
-                   :unable-to-download {:$ne true}})
-         (mq/fields [:domain :tokens])
-         (mq/sort (array-map (dotted-key :manual_class category) (if matched? -1 1)))
-         (mq/limit count))))
-  
-(defn classified-domain-tokens [category matched? count]
-  (map tokens (fetch-classified-domains category matched? count)))
+(defn score-tokens [tokens token-probabilities]
+  (reduce #(* %1 (inc (token-probabilities %2)))
+          1
+          tokens))
+
+(defn get-domain-classification [category domain]
+  (let [{:keys [probabilties anti-probabilities]} (classifier category)
+        tokens (tokens domain)]
+    (> (score-tokens tokens probabilities)
+       (score-tokens tokens anti-probabilities))))
+
+(defn classify-domain! [category domain]
+  (update-domain-value! domain [:bayes-class category]
+                        (get-domain-classification category domain)))
