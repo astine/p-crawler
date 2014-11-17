@@ -39,7 +39,7 @@
   (/ (+ (* prior prior-count) 0)
      (inc prior-count)))
 
-(defn process-document-tokens [{:keys [probabilities anti-probabilities count anti-count]} tokens match?]
+(defn process-document-tokens [{:keys [probabilities anti-probabilities count anti-count] :as classifier} tokens match?]
   (let [ncount (if match? (or count 0) (or anti-count 0))
         old-tokens (set (keys probabilities))
         new-tokens (difference tokens old-tokens)
@@ -55,10 +55,11 @@
         dec-probs (reduce #(assoc! %1 %2 0)
                           (transient (or (if match? anti-probabilities probabilities) {}))
                           new-tokens)]
-    {:count (if match? (inc ncount) count)
+    (assoc classifier
+     :count (if match? (inc ncount) count)
      :anti-count (if match? anti-count (inc ncount))
      :probabilities (persistent! (if match? inc-probs dec-probs))
-     :anti-probabilities (persistent! (if match? dec-probs inc-probs))}))
+     :anti-probabilities (persistent! (if match? dec-probs inc-probs)))))
     
 (defn train-classifier [classifier matches antimatches]
   (-> classifier
