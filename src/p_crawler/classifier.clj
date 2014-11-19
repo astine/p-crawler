@@ -90,16 +90,16 @@
     (update-classifier! category #(train-classifier % matches anti-matches))))
 
 (defn score-tokens [tokens token-probabilities]
-  (reduce #(* %1 (inc (token-probabilities %2)))
+  (reduce #(* %1 (inc (or (token-probabilities %2) 0)))
           1
           tokens))
 
 (defn get-domain-classification [category domain]
-  (let [{:keys [probabilties anti-probabilities]} (classifier category)
+  (let [{:keys [probabilities anti-probabilities]} (classifier category)
         tokens (tokens domain)]
     (> (score-tokens tokens probabilities)
        (score-tokens tokens anti-probabilities))))
 
 (defn classify-domain! [category domain]
-  (update-domain-value! domain [:bayes-class category]
-                        (get-domain-classification category domain)))
+  (update-domain! domain [:bayes-class category]
+                  (get-domain-classification category domain)))

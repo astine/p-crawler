@@ -179,7 +179,7 @@
 
 (def threadds (repeatedly 8 #(atom {})))
 
-(defn crawl-web [seed]
+(defn crawl-web [seed hook]
   (start-queue-transfer seed)
   (doseq [threadd threadds]
     (thread (binding [threadd threadd]
@@ -187,6 +187,7 @@
                 (when url
                   (swap! threadd (constantly {:time (time/now) :fetching url :count (inc (or (:count @threadd) 0))}))
                   (process-url url)
+                  (hook url)
                   (recur (<!! url-chan))))))))
 
 (logger/set-level! :trace)

@@ -8,4 +8,5 @@
 (defn -main
   "I don't do a whole lot ... yet."
   [& args]
-  (crawl-web (retrieve-queue)))
+  (crawl-web (or (retrieve-queue) args)
+             (partial classify-domain! :pornography?)))
